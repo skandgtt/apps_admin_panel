@@ -41,6 +41,27 @@ Server runs on `http://localhost:3000` by default.
 - `GET /coinCollect/:uuid`
   - Returns a single payment by `uuid`.
 
+**Apps Management (CRUD):**
+
+- `POST /apps`
+  - Body (JSON): `appName` (string), `appLogoUrl` (string)
+  - Creates a new app with auto-generated 5-digit unique `appId` (10000-99999).
+  - Returns: `{ success: true, data: app }`
+
+- `GET /apps`
+  - Returns all apps: `{ count: number, data: apps[] }`
+
+- `GET /apps/:appId`
+  - Returns a single app by `appId`.
+
+- `PUT /apps/:appId`
+  - Body (JSON): `appName` (string, optional), `appLogoUrl` (string, optional)
+  - Updates an app by `appId`. At least one field must be provided.
+
+- `DELETE /apps/:appId`
+  - Deletes an app by `appId`.
+  - Returns: `{ success: true, message: 'App deleted successfully', data: app }`
+
 ### Project Structure
 
 ```
@@ -51,10 +72,13 @@ src/
     db.js
   controllers/
     paymentController.js
+    appController.js
   models/
     Payment.js
+    App.js
   routes/
     paymentRoutes.js
+    appRoutes.js
 ```
 
 ## Deploy to Render (CLI)
