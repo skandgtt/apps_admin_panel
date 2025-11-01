@@ -1,6 +1,82 @@
 import { randomUUID } from 'crypto';
 import { Payment } from '../models/Payment.js';
 
+// Helper function to get date range based on filter
+function getDateRange(filter) {
+  const now = new Date();
+  let startDate, endDate;
+
+  switch (filter) {
+    case 'today': {
+      startDate = new Date(now);
+      startDate.setHours(0, 0, 0, 0);
+      endDate = new Date(now);
+      endDate.setHours(23, 59, 59, 999);
+      break;
+    }
+    case 'yesterday': {
+      const yesterday = new Date(now);
+      yesterday.setDate(yesterday.getDate() - 1);
+      startDate = new Date(yesterday.setHours(0, 0, 0, 0));
+      endDate = new Date(yesterday.setHours(23, 59, 59, 999));
+      break;
+    }
+    case 'last_10_min': {
+      startDate = new Date(now.getTime() - 10 * 60 * 1000);
+      endDate = new Date(now);
+      break;
+    }
+    case 'last_30_min': {
+      startDate = new Date(now.getTime() - 30 * 60 * 1000);
+      endDate = new Date(now);
+      break;
+    }
+    case 'last_1_hour': {
+      startDate = new Date(now.getTime() - 60 * 60 * 1000);
+      endDate = new Date(now);
+      break;
+    }
+    case 'last_3_hour': {
+      startDate = new Date(now.getTime() - 3 * 60 * 60 * 1000);
+      endDate = new Date(now);
+      break;
+    }
+    case 'last_6_hour': {
+      startDate = new Date(now.getTime() - 6 * 60 * 60 * 1000);
+      endDate = new Date(now);
+      break;
+    }
+    case 'this_weekend': {
+      const day = now.getDay(); // 0 = Sunday, 6 = Saturday
+      const diff = now.getDate() - day; // Days to subtract to get to Sunday
+      startDate = new Date(now);
+      startDate.setDate(diff); // Set to Sunday
+      startDate.setHours(0, 0, 0, 0);
+      endDate = new Date(now);
+      if (day === 0 || day === 6) {
+        // If it's already weekend, include today
+        endDate.setHours(23, 59, 59, 999);
+      } else {
+        // Otherwise, go to last Saturday
+        endDate.setDate(diff + 6);
+        endDate.setHours(23, 59, 59, 999);
+      }
+      break;
+    }
+    case 'this_month': {
+      startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+      startDate.setHours(0, 0, 0, 0);
+      endDate = new Date(now);
+      endDate.setHours(23, 59, 59, 999);
+      break;
+    }
+    default:
+      return null; // No date filter for unknown values
+  }
+
+  return { startDate, endDate };
+}
+
 export async function createOrUpdatePayment(req, res) {
   const { appId, ptStatus, collectionId, ant, amount, transactionDate } = req.body || {};
 
@@ -53,12 +129,29 @@ export async function createOrUpdatePayment(req, res) {
 }
 
 export async function listPayments(req, res) {
-  const { appId, page = 1, limit = 50 } = req.query;
-  const filter = {};
+  const { appId, page = 1, limit = 50, filter, startDate, endDate } = req.query;
   
+  // Build app filter
+  const appFilter = {};
   if (typeof appId === 'string' && appId.trim() !== '') {
-    filter.appId = appId.trim();
+    appFilter.appId = appId.trim();
   }
+  
+  // Build date filter
+  let dateFilter = {};
+  if (filter && filter !== 'custom_date') {
+    const dateRange = getDateRange(filter);
+    if (dateRange) {
+      dateFilter.transactionDate = { $gte: dateRange.startDate, $lte: dateRange.endDate };
+    }
+  } else if (filter === 'custom_date' && startDate && endDate) {
+    dateFilter.transactionDate = {
+      $gte: new Date(startDate),
+      $lte: new Date(endDate),
+    };
+  }
+  
+  const queryFilter = { ...appFilter, ...dateFilter };
   
   try {
     const pageNum = Math.max(1, Number(page));
@@ -66,12 +159,12 @@ export async function listPayments(req, res) {
     const skip = (pageNum - 1) * limitNum;
 
     const [payments, total] = await Promise.all([
-      Payment.find(filter)
+      Payment.find(queryFilter)
         .select('-amount')
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(limitNum),
-      Payment.countDocuments(filter),
+      Payment.countDocuments(queryFilter),
     ]);
 
     return res.json({
