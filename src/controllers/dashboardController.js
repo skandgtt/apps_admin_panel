@@ -1,5 +1,17 @@
 import { Payment } from '../models/Payment.js';
 import { Spend } from '../models/Spend.js';
+import { UserAppAccess } from '../models/UserAppAccess.js';
+import { App } from '../models/App.js';
+
+// Helper to get accessible appIds for child_admin
+async function getAccessibleAppIds(user) {
+  if (user.role === 'admin') {
+    return null; // null means all apps
+  }
+
+  const accessRecords = await UserAppAccess.find({ userId: user._id }).populate('appId');
+  return accessRecords.map((a) => a.appId?.appId).filter(Boolean);
+}
 
 // Helper function to get date range based on filter
 function getDateRange(filter) {
@@ -57,10 +69,34 @@ export async function getDashboard(req, res) {
       };
     }
 
-    // Build app filter
+    // Build app filter - respect user's app access
     const appFilter = {};
     if (appId) {
       appFilter.appId = appId;
+      // Check if user has access to this app
+      if (req.user.role === 'child_admin') {
+        const accessibleApps = await getAccessibleAppIds(req.user);
+        if (!accessibleApps.includes(appId)) {
+          return res.status(403).json({ error: 'Access denied for this app' });
+        }
+      }
+    } else if (req.user.role === 'child_admin') {
+      // If no appId specified, only show user's accessible apps
+      const accessibleApps = await getAccessibleAppIds(req.user);
+      if (accessibleApps.length === 0) {
+        return res.json({
+          totalTransactions: 0,
+          totalAmount: 0,
+          successCount: 0,
+          failedCount: 0,
+          retryCount: 0,
+          charts: {
+            dailySales: [],
+            statusDistribution: [],
+          },
+        });
+      }
+      appFilter.appId = { $in: accessibleApps };
     }
 
     const queryFilter = { ...appFilter, ...dateFilter };
@@ -160,6 +196,19 @@ export async function getTransactions(req, res) {
     const appFilter = {};
     if (appId) {
       appFilter.appId = appId;
+      // Check if user has access to this app
+      if (req.user.role === 'child_admin') {
+        const accessibleApps = await getAccessibleAppIds(req.user);
+        if (!accessibleApps.includes(appId)) {
+          return res.status(403).json({ error: 'Access denied for this app' });
+        }
+      }
+    } else if (req.user.role === 'child_admin') {
+      const accessibleApps = await getAccessibleAppIds(req.user);
+      if (accessibleApps.length === 0) {
+        return res.json({ count: 0, data: [], page: 1, totalPages: 0 });
+      }
+      appFilter.appId = { $in: accessibleApps };
     }
 
     const statusFilter = status ? { ptStatus: status } : {};
@@ -203,7 +252,23 @@ export async function getDailySales(req, res) {
     const endDate = new Date(targetDate);
     endDate.setHours(23, 59, 59, 999);
 
-    const appFilter = appId ? { appId } : {};
+    const appFilter = {};
+    if (appId) {
+      appFilter.appId = appId;
+      // Check if user has access to this app
+      if (req.user.role === 'child_admin') {
+        const accessibleApps = await getAccessibleAppIds(req.user);
+        if (!accessibleApps.includes(appId)) {
+          return res.status(403).json({ error: 'Access denied for this app' });
+        }
+      }
+    } else if (req.user.role === 'child_admin') {
+      const accessibleApps = await getAccessibleAppIds(req.user);
+      if (accessibleApps.length === 0) {
+        return res.json({ data: [] });
+      }
+      appFilter.appId = { $in: accessibleApps };
+    }
 
     const [payments, spends] = await Promise.all([
       Payment.find({

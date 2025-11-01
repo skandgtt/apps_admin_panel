@@ -4,8 +4,12 @@ import {
   getTransactions,
   getDailySales,
 } from '../controllers/dashboardController.js';
+import { authenticate } from '../middleware/auth.js';
 
 const router = Router();
+
+// All dashboard routes require authentication
+router.use(authenticate);
 
 router.get('/overview', getDashboard);
 router.get('/transactions', getTransactions);

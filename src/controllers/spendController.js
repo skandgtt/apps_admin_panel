@@ -1,4 +1,15 @@
 import { Spend } from '../models/Spend.js';
+import { UserAppAccess } from '../models/UserAppAccess.js';
+
+// Helper to get accessible appIds for child_admin
+async function getAccessibleAppIds(user) {
+  if (user.role === 'admin') {
+    return null; // null means all apps
+  }
+
+  const accessRecords = await UserAppAccess.find({ userId: user._id }).populate('appId');
+  return accessRecords.map((a) => a.appId?.appId).filter(Boolean);
+}
 
 // Create or update spend
 export async function createOrUpdateSpend(req, res) {
@@ -53,6 +64,19 @@ export async function getSpends(req, res) {
     const appFilter = {};
     if (appId) {
       appFilter.appId = appId;
+      // Check if user has access to this app
+      if (req.user.role === 'child_admin') {
+        const accessibleApps = await getAccessibleAppIds(req.user);
+        if (!accessibleApps.includes(appId)) {
+          return res.status(403).json({ error: 'Access denied for this app' });
+        }
+      }
+    } else if (req.user.role === 'child_admin') {
+      const accessibleApps = await getAccessibleAppIds(req.user);
+      if (accessibleApps.length === 0) {
+        return res.json({ count: 0, data: [] });
+      }
+      appFilter.appId = { $in: accessibleApps };
     }
 
     const queryFilter = { ...appFilter, ...dateFilter };

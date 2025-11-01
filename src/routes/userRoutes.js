@@ -7,15 +7,24 @@ import {
   deleteUser,
   assignAppsToUser,
 } from '../controllers/userController.js';
+import { authenticate, isAdmin } from '../middleware/auth.js';
 
 const router = Router();
 
-router.post('/', createUser);
-router.get('/', getAllUsers);
+// All routes require authentication
+router.use(authenticate);
+
+// Only admin can create users
+router.post('/', isAdmin, createUser);
+
+// Only admin can view all users and manage users
+router.get('/', isAdmin, getAllUsers);
+router.put('/:userId', isAdmin, updateUser);
+router.delete('/:userId', isAdmin, deleteUser);
+router.put('/:userId/assign-apps', isAdmin, assignAppsToUser);
+
+// Users can view their own profile
 router.get('/:userId', getUserById);
-router.put('/:userId', updateUser);
-router.delete('/:userId', deleteUser);
-router.put('/:userId/assign-apps', assignAppsToUser);
 
 export default router;
 

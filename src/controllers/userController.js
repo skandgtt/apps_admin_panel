@@ -62,7 +62,7 @@ export async function getAllUsers(req, res) {
   }
 }
 
-// Get user by ID
+// Get user by ID (users can view their own profile, admin can view any)
 export async function getUserById(req, res) {
   const { userId } = req.params;
 
@@ -70,6 +70,14 @@ export async function getUserById(req, res) {
     const user = await User.findById(userId).select('-password');
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
+    }
+
+    // Check if user is viewing their own profile or is admin
+    const isOwnProfile = req.user._id.toString() === userId;
+    const isAdmin = req.user.role === 'admin';
+
+    if (!isOwnProfile && !isAdmin) {
+      return res.status(403).json({ error: 'Access denied' });
     }
 
     // Get app access if child_admin

@@ -1,4 +1,15 @@
 import { App } from '../models/App.js';
+import { UserAppAccess } from '../models/UserAppAccess.js';
+
+// Helper to get accessible appIds for child_admin
+async function getAccessibleAppIds(user) {
+  if (user.role === 'admin') {
+    return null; // null means all apps
+  }
+
+  const accessRecords = await UserAppAccess.find({ userId: user._id }).populate('appId');
+  return accessRecords.map((a) => a.appId?.appId).filter(Boolean);
+}
 
 // Helper function to generate a unique 5-digit appId
 async function generateUniqueAppId() {
@@ -48,10 +59,23 @@ export async function createApp(req, res) {
   }
 }
 
-// Get all apps
+// Get all apps (filtered by user access for child_admin)
 export async function getAllApps(req, res) {
   try {
-    const apps = await App.find({}).sort({ createdAt: -1 });
+    let apps;
+    
+    if (req.user.role === 'admin') {
+      // Admin sees all apps
+      apps = await App.find({}).sort({ createdAt: -1 });
+    } else {
+      // Child admin only sees assigned apps
+      const accessibleAppIds = await getAccessibleAppIds(req.user);
+      if (accessibleAppIds.length === 0) {
+        return res.json({ count: 0, data: [] });
+      }
+      apps = await App.find({ appId: { $in: accessibleAppIds } }).sort({ createdAt: -1 });
+    }
+    
     return res.json({ count: apps.length, data: apps });
   } catch (err) {
     return res.status(500).json({ error: 'Database error', details: err.message });

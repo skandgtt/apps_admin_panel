@@ -1,5 +1,16 @@
 import { randomUUID } from 'crypto';
 import { Payment } from '../models/Payment.js';
+import { UserAppAccess } from '../models/UserAppAccess.js';
+
+// Helper to get accessible appIds for child_admin
+async function getAccessibleAppIds(user) {
+  if (user.role === 'admin') {
+    return null; // null means all apps
+  }
+
+  const accessRecords = await UserAppAccess.find({ userId: user._id }).populate('appId');
+  return accessRecords.map((a) => a.appId?.appId).filter(Boolean);
+}
 
 // Helper function to get date range based on filter
 function getDateRange(filter) {
@@ -131,10 +142,25 @@ export async function createOrUpdatePayment(req, res) {
 export async function listPayments(req, res) {
   const { appId, page = 1, limit = 50, filter, startDate, endDate } = req.query;
   
-  // Build app filter
+  // Build app filter - respect user's app access
   const appFilter = {};
   if (typeof appId === 'string' && appId.trim() !== '') {
-    appFilter.appId = appId.trim();
+    const requestedAppId = appId.trim();
+    appFilter.appId = requestedAppId;
+    // Check if user has access to this app
+    if (req.user.role === 'child_admin') {
+      const accessibleApps = await getAccessibleAppIds(req.user);
+      if (!accessibleApps.includes(requestedAppId)) {
+        return res.status(403).json({ error: 'Access denied for this app' });
+      }
+    }
+  } else if (req.user.role === 'child_admin') {
+    // If no appId specified, only show user's accessible apps
+    const accessibleApps = await getAccessibleAppIds(req.user);
+    if (accessibleApps.length === 0) {
+      return res.json({ count: 0, total: 0, page: 1, totalPages: 0, data: [] });
+    }
+    appFilter.appId = { $in: accessibleApps };
   }
   
   // Build date filter
@@ -182,10 +208,31 @@ export async function listPayments(req, res) {
 export async function getPaymentStatistics(req, res) {
   const { appId, filter, startDate, endDate } = req.query;
   
-  // Build app filter
+  // Build app filter - respect user's app access
   const appFilter = {};
   if (typeof appId === 'string' && appId.trim() !== '') {
-    appFilter.appId = appId.trim();
+    const requestedAppId = appId.trim();
+    appFilter.appId = requestedAppId;
+    // Check if user has access to this app
+    if (req.user.role === 'child_admin') {
+      const accessibleApps = await getAccessibleAppIds(req.user);
+      if (!accessibleApps.includes(requestedAppId)) {
+        return res.status(403).json({ error: 'Access denied for this app' });
+      }
+    }
+  } else if (req.user.role === 'child_admin') {
+    // If no appId specified, only show user's accessible apps
+    const accessibleApps = await getAccessibleAppIds(req.user);
+    if (accessibleApps.length === 0) {
+      return res.json({
+        totalTransactions: 0,
+        successCount: 0,
+        failedCount: 0,
+        retryCount: 0,
+        totalSales: 0,
+      });
+    }
+    appFilter.appId = { $in: accessibleApps };
   }
   
   // Build date filter

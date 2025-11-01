@@ -6,8 +6,12 @@ import {
   updateApp,
   deleteApp,
 } from '../controllers/appController.js';
+import { authenticate } from '../middleware/auth.js';
 
 const router = Router();
+
+// All routes require authentication
+router.use(authenticate);
 
 router.post('/', createApp);
 router.get('/', getAllApps);
