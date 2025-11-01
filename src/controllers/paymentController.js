@@ -206,7 +206,7 @@ export async function getPaymentStatistics(req, res) {
   
   try {
     // Get aggregated statistics
-    const [stats, allPayments] = await Promise.all([
+    const [stats, successPayments] = await Promise.all([
       Payment.aggregate([
         { $match: queryFilter },
         {
@@ -225,11 +225,12 @@ export async function getPaymentStatistics(req, res) {
           },
         },
       ]),
-      Payment.find(queryFilter).select('ant'),
+      // Only get success payments for totalSales calculation
+      Payment.find({ ...queryFilter, ptStatus: 'success' }).select('ant'),
     ]);
 
-    // Calculate total sales by parsing ant field from string to int
-    const totalSales = allPayments.reduce((sum, payment) => {
+    // Calculate total sales only from successful payments by parsing ant field from string to int
+    const totalSales = successPayments.reduce((sum, payment) => {
       const antValue = parseInt(payment.ant, 10) || 0;
       return sum + antValue;
     }, 0);
