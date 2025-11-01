@@ -1,0 +1,20 @@
+services:
+  - type: web
+    name: apps-admin-coincollect-api
+    runtime: node
+    plan: free
+    repo: https://github.com/skandgtt/apps_admin_panel.git
+    branch: main
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: NODE_VERSION
+        value: 18
+      - key: MONGODB_URI
+        sync: false
+      - key: PORT
+        value: 3000
+    healthCheckPath: /health
+    autoDeploy: true
+
+
