@@ -179,6 +179,80 @@ export async function listPayments(req, res) {
   }
 }
 
+export async function getPaymentStatistics(req, res) {
+  const { appId, filter, startDate, endDate } = req.query;
+  
+  // Build app filter
+  const appFilter = {};
+  if (typeof appId === 'string' && appId.trim() !== '') {
+    appFilter.appId = appId.trim();
+  }
+  
+  // Build date filter
+  let dateFilter = {};
+  if (filter && filter !== 'custom_date') {
+    const dateRange = getDateRange(filter);
+    if (dateRange) {
+      dateFilter.transactionDate = { $gte: dateRange.startDate, $lte: dateRange.endDate };
+    }
+  } else if (filter === 'custom_date' && startDate && endDate) {
+    dateFilter.transactionDate = {
+      $gte: new Date(startDate),
+      $lte: new Date(endDate),
+    };
+  }
+  
+  const queryFilter = { ...appFilter, ...dateFilter };
+  
+  try {
+    // Get aggregated statistics
+    const [stats, allPayments] = await Promise.all([
+      Payment.aggregate([
+        { $match: queryFilter },
+        {
+          $group: {
+            _id: null,
+            totalTransactions: { $sum: 1 },
+            successCount: {
+              $sum: { $cond: [{ $eq: ['$ptStatus', 'success'] }, 1, 0] },
+            },
+            failedCount: {
+              $sum: { $cond: [{ $eq: ['$ptStatus', 'failed'] }, 1, 0] },
+            },
+            retryCount: {
+              $sum: { $cond: [{ $eq: ['$ptStatus', 'retry'] }, 1, 0] },
+            },
+          },
+        },
+      ]),
+      Payment.find(queryFilter).select('ant'),
+    ]);
+
+    // Calculate total sales by parsing ant field from string to int
+    const totalSales = allPayments.reduce((sum, payment) => {
+      const antValue = parseInt(payment.ant, 10) || 0;
+      return sum + antValue;
+    }, 0);
+
+    const result = stats[0] || {
+      totalTransactions: 0,
+      successCount: 0,
+      failedCount: 0,
+      retryCount: 0,
+    };
+
+    return res.json({
+      totalTransactions: result.totalTransactions,
+      successCount: result.successCount,
+      failedCount: result.failedCount,
+      retryCount: result.retryCount,
+      totalSales: totalSales,
+    });
+  } catch (err) {
+    return res.status(500).json({ error: 'Database error', details: err.message });
+  }
+}
+
 export async function getPaymentByUuid(req, res) {
   const { uuid } = req.params;
   try {
