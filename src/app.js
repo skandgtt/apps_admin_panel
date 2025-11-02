@@ -7,6 +7,7 @@ import userRoutes from './routes/userRoutes.js';
 import dashboardRoutes from './routes/dashboardRoutes.js';
 import spendRoutes from './routes/spendRoutes.js';
 import pdfRoutes from './routes/pdfRoutes.js';
+import collectionRoutes from './routes/collectionRoutes.js';
 
 const app = express();
 
@@ -23,5 +24,6 @@ app.use('/users', userRoutes);
 app.use('/dashboard', dashboardRoutes);
 app.use('/spends', spendRoutes);
 app.use('/pdf', pdfRoutes);
+app.use('/collections', collectionRoutes);
 
 export default app;
