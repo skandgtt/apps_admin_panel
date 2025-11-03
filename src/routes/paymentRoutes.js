@@ -11,5 +11,3 @@ router.get('/', authenticate, listPayments);
 router.get('/:uuid', authenticate, getPaymentByUuid);
 
 export default router;
-
-

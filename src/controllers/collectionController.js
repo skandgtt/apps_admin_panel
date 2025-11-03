@@ -188,3 +188,46 @@ export async function deleteCollection(req, res) {
   }
 }
 
+// Get a random collectionId for a given app and tag
+async function getRandomCollectionByTag(req, res, tag) {
+  const { appId } = req.query;
+
+  if (!appId || appId.trim() === '') {
+    return res.status(400).json({ error: 'appId is required' });
+  }
+
+  try {
+    // Access control only if auth is present; otherwise allow public use
+    if (req.user && req.user.role === 'child_admin') {
+      const accessibleApps = await getAccessibleAppIds(req.user);
+      if (!accessibleApps.includes(appId.trim())) {
+        return res.status(403).json({ error: 'Access denied for this app' });
+      }
+    }
+
+    const docs = await Collection.aggregate([
+      { $match: { appId: appId.trim(), tag } },
+      { $sample: { size: 1 } },
+      { $project: { _id: 0, appId: 1, collectionId: 1, tag: 1 } }
+    ]);
+
+    if (!docs || docs.length === 0) {
+      return res.status(404).json({ error: 'No collection found for given tag' });
+    }
+
+    return res.json({ data: docs[0] });
+  } catch (err) {
+    return res.status(500).json({ error: 'Database error', details: err.message });
+  }
+}
+
+// Map: "success" tab → primary tag
+export async function getRandomSuccessCollection(req, res) {
+  return getRandomCollectionByTag(req, res, 'primary');
+}
+
+// Retry tag
+export async function getRandomRetryCollection(req, res) {
+  return getRandomCollectionByTag(req, res, 'retry');
+}
+
