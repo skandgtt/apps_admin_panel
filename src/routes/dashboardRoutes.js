@@ -16,4 +16,3 @@ router.get('/transactions', getTransactions);
 router.get('/daily-sales', getDailySales);
 
 export default router;
-
