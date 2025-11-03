@@ -71,6 +71,30 @@ export async function getSpends(req, res) {
       const end = new Date(now.getFullYear(), now.getMonth() + 1, 0);
       end.setHours(23, 59, 59, 999);
       dateFilter.date = { $gte: start, $lte: end };
+    } else if (filter === 'last_10_days') {
+      const now = new Date();
+      const start = new Date(now);
+      start.setDate(now.getDate() - 9); // include today + previous 9 days
+      start.setHours(0, 0, 0, 0);
+      const end = new Date(now);
+      end.setHours(23, 59, 59, 999);
+      dateFilter.date = { $gte: start, $lte: end };
+    } else if (filter === 'last_30_days') {
+      const now = new Date();
+      const start = new Date(now);
+      start.setDate(now.getDate() - 29); // include today + previous 29 days
+      start.setHours(0, 0, 0, 0);
+      const end = new Date(now);
+      end.setHours(23, 59, 59, 999);
+      dateFilter.date = { $gte: start, $lte: end };
+    } else if (filter === 'last_month') {
+      const now = new Date();
+      const firstOfThisMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+      const end = new Date(firstOfThisMonth.getTime() - 1);
+      const start = new Date(end.getFullYear(), end.getMonth(), 1);
+      start.setHours(0, 0, 0, 0);
+      end.setHours(23, 59, 59, 999);
+      dateFilter.date = { $gte: start, $lte: end };
     }
 
     const appFilter = {};
