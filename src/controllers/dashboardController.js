@@ -330,3 +330,195 @@ export async function getDailySales(req, res) {
   }
 }
 
+// Performance API: one endpoint handling multiple filters
+// Filters supported:
+// last_7_days, last_15_days, last_30_days (daily buckets)
+// this_month, last_month (daily buckets)
+// last_6_months, this_year (monthly buckets)
+export async function getPerformance(req, res) {
+  const { appId, filter } = req.query;
+
+  if (!filter) return res.status(400).json({ error: 'filter is required' });
+
+  try {
+    // Build app filter with access control
+    const appFilter = {};
+    if (appId) {
+      appFilter.appId = appId;
+      if (req.user.role === 'child_admin') {
+        const accessibleApps = await getAccessibleAppIds(req.user);
+        if (!accessibleApps.includes(appId)) {
+          return res.status(403).json({ error: 'Access denied for this app' });
+        }
+      }
+    } else if (req.user.role === 'child_admin') {
+      const accessibleApps = await getAccessibleAppIds(req.user);
+      if (accessibleApps.length === 0) {
+        return res.json({ buckets: [] });
+      }
+      appFilter.appId = { $in: accessibleApps };
+    }
+
+    // Compute date range and bucket type
+    const now = new Date();
+    let start, end, bucket = 'day';
+
+    const startOfMonth = (d) => new Date(d.getFullYear(), d.getMonth(), 1);
+    const endOfMonth = (d) => new Date(d.getFullYear(), d.getMonth() + 1, 0, 23, 59, 59, 999);
+
+    switch (filter) {
+      case 'last_7_days': {
+        start = new Date(now); start.setDate(now.getDate() - 6); start.setHours(0,0,0,0);
+        end = new Date(now); end.setHours(23,59,59,999);
+        bucket = 'day';
+        break;
+      }
+      case 'last_15_days': {
+        start = new Date(now); start.setDate(now.getDate() - 14); start.setHours(0,0,0,0);
+        end = new Date(now); end.setHours(23,59,59,999);
+        bucket = 'day';
+        break;
+      }
+      case 'last_30_days': {
+        start = new Date(now); start.setDate(now.getDate() - 29); start.setHours(0,0,0,0);
+        end = new Date(now); end.setHours(23,59,59,999);
+        bucket = 'day';
+        break;
+      }
+      case 'this_month': {
+        start = startOfMonth(now); start.setHours(0,0,0,0);
+        end = endOfMonth(now);
+        bucket = 'day';
+        break;
+      }
+      case 'last_month': {
+        const firstThis = startOfMonth(now);
+        end = new Date(firstThis.getTime() - 1);
+        start = startOfMonth(end);
+        start.setHours(0,0,0,0);
+        end.setHours(23,59,59,999);
+        bucket = 'day';
+        break;
+      }
+      case 'last_6_months': {
+        const sixAgo = new Date(now.getFullYear(), now.getMonth() - 5, 1);
+        start = sixAgo; start.setHours(0,0,0,0);
+        end = endOfMonth(now);
+        bucket = 'month';
+        break;
+      }
+      case 'this_year': {
+        start = new Date(now.getFullYear(), 0, 1);
+        start.setHours(0,0,0,0);
+        end = new Date(now.getFullYear(), 11, 31, 23, 59, 59, 999);
+        bucket = 'month';
+        break;
+      }
+      default:
+        return res.status(400).json({ error: 'Unsupported filter' });
+    }
+
+    const dateMatch = { transactionDate: { $gte: start, $lte: end } };
+    const matchStage = { $match: { ...appFilter, ...dateMatch, ptStatus: 'success' } };
+    const dateFormat = bucket === 'day' ? '%Y-%m-%d' : '%Y-%m';
+
+    const agg = await Payment.aggregate([
+      matchStage,
+      { $group: {
+          _id: { $dateToString: { format: dateFormat, date: '$transactionDate' } },
+          successCount: { $sum: 1 },
+          successAmount: { $sum: '$amount' }
+        }
+      },
+      { $sort: { _id: 1 } }
+    ]);
+
+    const buckets = agg.map(a => ({
+      bucket: a._id,
+      successCount: a.successCount,
+      successAmount: a.successAmount
+    }));
+
+    return res.json({ bucketType: bucket, start: start.toISOString(), end: end.toISOString(), buckets });
+  } catch (err) {
+    return res.status(500).json({ error: 'Database error', details: err.message });
+  }
+}
+
+// Performance hourly: last_8_hours, last_12_hours, last_24_hours
+export async function getPerformanceHourly(req, res) {
+  const { appId, filter } = req.query;
+
+  if (!filter) return res.status(400).json({ error: 'filter is required' });
+
+  try {
+    // Build app filter with access control
+    const appFilter = {};
+    if (appId) {
+      appFilter.appId = appId;
+      if (req.user.role === 'child_admin') {
+        const accessibleApps = await getAccessibleAppIds(req.user);
+        if (!accessibleApps.includes(appId)) {
+          return res.status(403).json({ error: 'Access denied for this app' });
+        }
+      }
+    } else if (req.user.role === 'child_admin') {
+      const accessibleApps = await getAccessibleAppIds(req.user);
+      if (accessibleApps.length === 0) {
+        return res.json({ bucketType: 'hour', buckets: [] });
+      }
+      appFilter.appId = { $in: accessibleApps };
+    }
+
+    const now = new Date();
+    let start, end;
+    switch (filter) {
+      case 'last_8_hours': {
+        start = new Date(now.getTime() - 8 * 60 * 60 * 1000);
+        break;
+      }
+      case 'last_12_hours': {
+        start = new Date(now.getTime() - 12 * 60 * 60 * 1000);
+        break;
+      }
+      case 'last_24_hours': {
+        start = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+        break;
+      }
+      default:
+        return res.status(400).json({ error: 'Unsupported filter' });
+    }
+    end = now;
+
+    const dateMatch = { transactionDate: { $gte: start, $lte: end } };
+    const matchStage = { $match: { ...appFilter, ...dateMatch, ptStatus: 'success' } };
+
+    const agg = await Payment.aggregate([
+      matchStage,
+      { $group: {
+          _id: {
+            y: { $year: '$transactionDate' },
+            m: { $month: '$transactionDate' },
+            d: { $dayOfMonth: '$transactionDate' },
+            h: { $hour: '$transactionDate' }
+          },
+          successCount: { $sum: 1 },
+          successAmount: { $sum: '$amount' }
+        }
+      },
+      { $sort: { '_id.y': 1, '_id.m': 1, '_id.d': 1, '_id.h': 1 } }
+    ]);
+
+    const fmt = (g) => `${g.y.toString().padStart(4,'0')}-${g.m.toString().padStart(2,'0')}-${g.d.toString().padStart(2,'0')} ${g.h.toString().padStart(2,'0')}:00`;
+    const buckets = agg.map(a => ({
+      bucket: fmt(a._id),
+      successCount: a.successCount,
+      successAmount: a.successAmount
+    }));
+
+    return res.json({ bucketType: 'hour', start: start.toISOString(), end: end.toISOString(), buckets });
+  } catch (err) {
+    return res.status(500).json({ error: 'Database error', details: err.message });
+  }
+}
+
