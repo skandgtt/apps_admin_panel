@@ -33,7 +33,7 @@ export async function createOrUpdateCollection(req, res) {
 
   try {
     // Check if user has access to this app
-    if (req.user.role === 'child_admin') {
+    if (req.user && req.user.role === 'child_admin') {
       const accessibleApps = await getAccessibleAppIds(req.user);
       if (!accessibleApps.includes(appId)) {
         return res.status(403).json({ error: 'Access denied for this app' });
@@ -103,7 +103,7 @@ export async function getCollectionsByAppId(req, res) {
 
   try {
     // Check if user has access to this app
-    if (req.user.role === 'child_admin') {
+    if (req.user && req.user.role === 'child_admin') {
       const accessibleApps = await getAccessibleAppIds(req.user);
       if (!accessibleApps.includes(appId.trim())) {
         return res.status(403).json({ error: 'Access denied for this app' });
@@ -128,13 +128,13 @@ export async function getAllCollections(req, res) {
     if (appId) {
       filter.appId = appId.trim();
       // Check if user has access to this app
-      if (req.user.role === 'child_admin') {
+      if (req.user && req.user.role === 'child_admin') {
         const accessibleApps = await getAccessibleAppIds(req.user);
         if (!accessibleApps.includes(appId.trim())) {
           return res.status(403).json({ error: 'Access denied for this app' });
         }
       }
-    } else if (req.user.role === 'child_admin') {
+    } else if (req.user && req.user.role === 'child_admin') {
       // Only show collections for user's accessible apps
       const accessibleApps = await getAccessibleAppIds(req.user);
       if (accessibleApps.length === 0) {
@@ -166,7 +166,7 @@ export async function deleteCollection(req, res) {
 
   try {
     // Check if user has access to this app
-    if (req.user.role === 'child_admin') {
+    if (req.user && req.user.role === 'child_admin') {
       const accessibleApps = await getAccessibleAppIds(req.user);
       if (!accessibleApps.includes(appId.trim())) {
         return res.status(403).json({ error: 'Access denied for this app' });
