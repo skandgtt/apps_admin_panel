@@ -15,21 +15,46 @@ async function getAccessibleAppIds(user) {
 export async function createOrUpdateSpend(req, res) {
   const { appId, date, spendAmount, settlement } = req.body || {};
 
-  if (!appId || !date || spendAmount === undefined) {
+  if (!appId || !date) {
     return res.status(400).json({
-      error: 'appId, date, and spendAmount are required',
+      error: 'appId and date are required',
     });
   }
 
   try {
+    // Check if record exists
+    const existing = await Spend.findOne({ appId, date: new Date(date) });
+    
+    const updateData = {
+      appId,
+      date: new Date(date),
+    };
+
+    // Only update spendAmount if provided
+    if (spendAmount !== undefined) {
+      updateData.spendAmount = Number(spendAmount);
+    } else if (!existing) {
+      // New record requires spendAmount
+      return res.status(400).json({
+        error: 'spendAmount is required for new records',
+      });
+    } else {
+      // Keep existing spendAmount when updating
+      updateData.spendAmount = existing.spendAmount;
+    }
+
+    // Update settlement if provided, otherwise keep existing or default to 'no'
+    if (settlement !== undefined) {
+      updateData.settlement = settlement || 'no';
+    } else if (existing) {
+      updateData.settlement = existing.settlement;
+    } else {
+      updateData.settlement = 'no';
+    }
+
     const spend = await Spend.findOneAndUpdate(
       { appId, date: new Date(date) },
-      {
-        appId,
-        date: new Date(date),
-        spendAmount: Number(spendAmount),
-        settlement: settlement || 'no',
-      },
+      updateData,
       { upsert: true, new: true }
     );
 
@@ -101,13 +126,13 @@ export async function getSpends(req, res) {
     if (appId) {
       appFilter.appId = appId;
       // Check if user has access to this app
-      if (req.user.role === 'child_admin') {
+      if (req.user && req.user.role === 'child_admin') {
         const accessibleApps = await getAccessibleAppIds(req.user);
         if (!accessibleApps.includes(appId)) {
           return res.status(403).json({ error: 'Access denied for this app' });
         }
       }
-    } else if (req.user.role === 'child_admin') {
+    } else if (req.user && req.user.role === 'child_admin') {
       const accessibleApps = await getAccessibleAppIds(req.user);
       if (accessibleApps.length === 0) {
         return res.json({ count: 0, data: [] });
@@ -121,16 +146,19 @@ export async function getSpends(req, res) {
     const spends = await Spend.find(queryFilter).sort({ date: -1 });
 
     // Calculate received amount per day from successful payments
+    const paymentMatch = { ptStatus: 'success' };
+    if (appFilter.appId) {
+      paymentMatch.appId = appFilter.appId;
+    }
+    if (dateFilter.date) {
+      paymentMatch.transactionDate = dateFilter.date;
+    }
+
     const paymentsAgg = await Payment.aggregate([
-      { $match: {
-          ...(appFilter.appId ? { appId: appFilter.appId } : appFilter),
-          ...(dateFilter.date ? { transactionDate: dateFilter.date } : {}),
-          ptStatus: 'success'
-        }
-      },
+      { $match: paymentMatch },
       { $group: {
           _id: { $dateToString: { format: '%Y-%m-%d', date: '$transactionDate' } },
-          receivedAmount: { $sum: '$amount' }
+          receivedAmount: { $sum: { $convert: { input: '$ant', to: 'int', onError: 0, onNull: 0 } } }
         }
       }
     ]);
