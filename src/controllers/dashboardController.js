@@ -427,7 +427,7 @@ export async function getPerformance(req, res) {
       { $group: {
           _id: { $dateToString: { format: dateFormat, date: '$transactionDate' } },
           successCount: { $sum: 1 },
-          successAmount: { $sum: '$amount' }
+          successAmount: { $sum: { $convert: { input: '$ant', to: 'int', onError: 0, onNull: 0 } } }
         }
       },
       { $sort: { _id: 1 } }
@@ -503,7 +503,7 @@ export async function getPerformanceHourly(req, res) {
             h: { $hour: '$transactionDate' }
           },
           successCount: { $sum: 1 },
-          successAmount: { $sum: '$amount' }
+          successAmount: { $sum: { $convert: { input: '$ant', to: 'int', onError: 0, onNull: 0 } } }
         }
       },
       { $sort: { '_id.y': 1, '_id.m': 1, '_id.d': 1, '_id.h': 1 } }
