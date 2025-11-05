@@ -476,6 +476,7 @@ export async function getPerformanceHourly(req, res) {
 
     const now = new Date();
     let start, end;
+    let granularity = 'hour'; // or 'minute'
     switch (filter) {
       case 'last_8_hours': {
         start = new Date(now.getTime() - 8 * 60 * 60 * 1000);
@@ -491,10 +492,12 @@ export async function getPerformanceHourly(req, res) {
       }
       case 'last_10_min': {
         start = new Date(now.getTime() - 10 * 60 * 1000);
+        granularity = 'minute';
         break;
       }
       case 'last_30_min': {
         start = new Date(now.getTime() - 30 * 60 * 1000);
+        granularity = 'minute';
         break;
       }
       default:
@@ -507,6 +510,27 @@ export async function getPerformanceHourly(req, res) {
 
     const dateMatch = { transactionDate: { $gte: start, $lte: end } };
     const matchStage = { $match: { ...appFilter, ...dateMatch, ptStatus } };
+
+    if (granularity === 'minute') {
+      const agg = await Payment.aggregate([
+        matchStage,
+        { $group: {
+            _id: { $dateToString: { format: '%Y-%m-%d %H:%M', date: '$transactionDate' } },
+            successCount: { $sum: 1 },
+            successAmount: { $sum: { $convert: { input: '$ant', to: 'int', onError: 0, onNull: 0 } } }
+          }
+        },
+        { $sort: { _id: 1 } }
+      ]);
+
+      const buckets = agg.map(a => ({
+        bucket: a._id, // YYYY-MM-DD HH:MM
+        successCount: a.successCount,
+        successAmount: a.successAmount
+      }));
+
+      return res.json({ bucketType: 'minute', start: start.toISOString(), end: end.toISOString(), buckets });
+    }
 
     const agg = await Payment.aggregate([
       matchStage,
