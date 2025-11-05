@@ -57,6 +57,11 @@ function getDateRange(filter) {
       endDate = new Date(now);
       break;
     }
+    case 'last_12_hours': {
+      startDate = new Date(now.getTime() - 12 * 60 * 60 * 1000);
+      endDate = new Date(now);
+      break;
+    }
     case 'this_weekend': {
       const day = now.getDay(); // 0 = Sunday, 6 = Saturday
       const diff = now.getDate() - day; // Days to subtract to get to Sunday

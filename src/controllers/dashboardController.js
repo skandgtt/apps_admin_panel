@@ -489,6 +489,14 @@ export async function getPerformanceHourly(req, res) {
         start = new Date(now.getTime() - 24 * 60 * 60 * 1000);
         break;
       }
+      case 'last_10_min': {
+        start = new Date(now.getTime() - 10 * 60 * 1000);
+        break;
+      }
+      case 'last_30_min': {
+        start = new Date(now.getTime() - 30 * 60 * 1000);
+        break;
+      }
       default:
         return res.status(400).json({ error: 'Unsupported filter' });
     }
