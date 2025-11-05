@@ -336,7 +336,7 @@ export async function getDailySales(req, res) {
 // this_month, last_month (daily buckets)
 // last_6_months, this_year (monthly buckets)
 export async function getPerformance(req, res) {
-  const { appId, filter } = req.query;
+  const { appId, filter, status = 'success' } = req.query;
 
   if (!filter) return res.status(400).json({ error: 'filter is required' });
 
@@ -418,8 +418,12 @@ export async function getPerformance(req, res) {
         return res.status(400).json({ error: 'Unsupported filter' });
     }
 
+    // Validate status without changing existing default behavior
+    const allowed = ['success', 'failed', 'retry'];
+    const ptStatus = allowed.includes(String(status)) ? String(status) : 'success';
+
     const dateMatch = { transactionDate: { $gte: start, $lte: end } };
-    const matchStage = { $match: { ...appFilter, ...dateMatch, ptStatus: 'success' } };
+    const matchStage = { $match: { ...appFilter, ...dateMatch, ptStatus } };
     const dateFormat = bucket === 'day' ? '%Y-%m-%d' : '%Y-%m';
 
     const agg = await Payment.aggregate([
@@ -447,7 +451,7 @@ export async function getPerformance(req, res) {
 
 // Performance hourly: last_8_hours, last_12_hours, last_24_hours
 export async function getPerformanceHourly(req, res) {
-  const { appId, filter } = req.query;
+  const { appId, filter, status = 'success' } = req.query;
 
   if (!filter) return res.status(400).json({ error: 'filter is required' });
 
@@ -490,8 +494,11 @@ export async function getPerformanceHourly(req, res) {
     }
     end = now;
 
+    const allowed = ['success', 'failed', 'retry'];
+    const ptStatus = allowed.includes(String(status)) ? String(status) : 'success';
+
     const dateMatch = { transactionDate: { $gte: start, $lte: end } };
-    const matchStage = { $match: { ...appFilter, ...dateMatch, ptStatus: 'success' } };
+    const matchStage = { $match: { ...appFilter, ...dateMatch, ptStatus } };
 
     const agg = await Payment.aggregate([
       matchStage,

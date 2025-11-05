@@ -45,7 +45,7 @@ export async function createOrUpdateCollection(req, res) {
     const errors = [];
 
     for (const item of collections) {
-      const { collectionId, tag } = item || {};
+      const { collectionId, tag, number } = item || {};
 
       // Validate each item
       if (!collectionId || typeof collectionId !== 'string' || collectionId.trim() === '') {
@@ -61,14 +61,28 @@ export async function createOrUpdateCollection(req, res) {
         continue;
       }
 
+      // Validate number 1..5 (unique per app)
+      const t = tag.trim();
+      const n = Number(number);
+      if (!Number.isInteger(n) || n < 1 || n > 5) {
+        errors.push({ collectionId: collectionId.trim(), error: 'number must be an integer 1..5' });
+        continue;
+      }
+
       try {
+        // Upsert by (appId, number) slot
+        const t = tag.trim();
+        const filter = { appId: appId.trim(), number: Number(number) };
+        const update = {
+          appId: appId.trim(),
+          collectionId: collectionId.trim(),
+          tag: t,
+        };
+        update.number = Number(number);
+
         const collection = await Collection.findOneAndUpdate(
-          { appId: appId.trim(), collectionId: collectionId.trim() },
-          {
-            appId: appId.trim(),
-            collectionId: collectionId.trim(),
-            tag: tag.trim(),
-          },
+          filter,
+          update,
           { upsert: true, new: true, runValidators: true }
         );
         results.push(collection);
@@ -80,6 +94,8 @@ export async function createOrUpdateCollection(req, res) {
         }
       }
     }
+
+    // No pruning required when using fixed numbered slots 1..5
 
     return res.status(201).json({
       success: true,
