@@ -62,35 +62,46 @@ export async function createOrUpdateCollection(req, res) {
       }
 
       const t = tag.trim();
-
-      try {
-        const t = tag.trim();
-        let collection;
-        if (_id) {
-          // Update by specific document _id (scoped to app)
-          collection = await Collection.findOneAndUpdate(
-            { _id, appId: appId.trim() },
-            { collectionId: collectionId.trim(), tag: t },
-            { new: true, runValidators: true }
-          );
-          if (!collection) {
-            errors.push({ collectionId: collectionId.trim(), error: 'Invalid _id for this appId' });
+      let attempt = 0;
+      let saved = false;
+      while (attempt < 2 && !saved) {
+        try {
+          let collection;
+          if (_id) {
+            collection = await Collection.findOneAndUpdate(
+              { _id, appId: appId.trim() },
+              { collectionId: collectionId.trim(), tag: t },
+              { new: true, runValidators: true }
+            );
+            if (!collection) {
+              errors.push({ collectionId: collectionId.trim(), error: 'Invalid _id for this appId' });
+              break;
+            }
+          } else {
+            collection = await Collection.findOneAndUpdate(
+              { appId: appId.trim(), collectionId: collectionId.trim(), tag: t },
+              { appId: appId.trim(), collectionId: collectionId.trim(), tag: t },
+              { upsert: true, new: true, runValidators: true }
+            );
+          }
+          results.push(collection);
+          saved = true;
+        } catch (err) {
+          if (err.code === 11000 && attempt === 0) {
+            try {
+              await Collection.collection.dropIndex({ appId: 1, collectionId: 1 });
+            } catch (dropErr) {
+              // Ignore index not found errors
+              if (!/index not found/i.test(dropErr?.message || '')) {
+                errors.push({ collectionId: collectionId.trim(), error: dropErr.message });
+                break;
+              }
+            }
+            attempt += 1;
             continue;
           }
-        } else {
-          // Upsert by appId + collectionId
-          collection = await Collection.findOneAndUpdate(
-            { appId: appId.trim(), collectionId: collectionId.trim() },
-            { appId: appId.trim(), collectionId: collectionId.trim(), tag: t },
-            { upsert: true, new: true, runValidators: true }
-          );
-        }
-        results.push(collection);
-      } catch (err) {
-        if (err.code === 11000) {
-          errors.push({ collectionId: collectionId.trim(), error: 'Collection ID already exists for this app' });
-        } else {
           errors.push({ collectionId: collectionId.trim(), error: err.message });
+          break;
         }
       }
     }

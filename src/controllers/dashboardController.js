@@ -13,31 +13,71 @@ async function getAccessibleAppIds(user) {
   return accessRecords.map((a) => a.appId?.appId).filter(Boolean);
 }
 
+const IST_OFFSET_MINUTES = 330;
+
+function toIST(date) {
+  return new Date(date.getTime() + IST_OFFSET_MINUTES * 60 * 1000);
+}
+
+function fromIST(date) {
+  return new Date(date.getTime() - IST_OFFSET_MINUTES * 60 * 1000);
+}
+
+function startOfDayIST(date) {
+  const d = new Date(date);
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+function endOfDayIST(date) {
+  const d = new Date(date);
+  d.setHours(23, 59, 59, 999);
+  return d;
+}
+
+function formatIST(date) {
+  const formatter = new Intl.DateTimeFormat('en-IN', {
+    timeZone: 'Asia/Kolkata',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  });
+
+  const parts = formatter.formatToParts(date);
+  const lookup = Object.fromEntries(parts.map(({ type, value }) => [type, value]));
+  return `${lookup.year}-${lookup.month}-${lookup.day}T${lookup.hour}:${lookup.minute}:${lookup.second}+05:30`;
+}
+
 // Helper function to get date range based on filter
 function getDateRange(filter) {
-  const now = new Date();
-  let startDate, endDate;
+  const nowUTC = new Date();
+  const nowIST = toIST(nowUTC);
+  let startIST, endIST;
 
   switch (filter) {
     case 'yesterday': {
-      const yesterday = new Date(now);
-      yesterday.setDate(yesterday.getDate() - 1);
-      startDate = new Date(yesterday.setHours(0, 0, 0, 0));
-      endDate = new Date(yesterday.setHours(23, 59, 59, 999));
+      const yesterdayIST = new Date(nowIST);
+      yesterdayIST.setDate(yesterdayIST.getDate() - 1);
+      startIST = startOfDayIST(yesterdayIST);
+      endIST = endOfDayIST(yesterdayIST);
       break;
     }
     case 'last_7_days': {
-      startDate = new Date(now);
-      startDate.setDate(startDate.getDate() - 7);
-      startDate.setHours(0, 0, 0, 0);
-      endDate = new Date(now);
-      endDate.setHours(23, 59, 59, 999);
+      endIST = endOfDayIST(nowIST);
+      startIST = new Date(endIST);
+      startIST.setDate(startIST.getDate() - 7);
+      startIST = startOfDayIST(startIST);
       break;
     }
     case 'this_month': {
-      startDate = new Date(now.getFullYear(), now.getMonth(), 1);
-      endDate = new Date(now);
-      endDate.setHours(23, 59, 59, 999);
+      const startMonthIST = startOfDayIST(new Date(nowIST));
+      startMonthIST.setDate(1);
+      startIST = startMonthIST;
+      endIST = endOfDayIST(nowIST);
       break;
     }
     case 'all_time':
@@ -46,7 +86,7 @@ function getDateRange(filter) {
       return null;
   }
 
-  return { startDate, endDate };
+  return { startDate: fromIST(startIST), endDate: fromIST(endIST) };
 }
 
 
@@ -121,7 +161,11 @@ export async function getDashboard(req, res) {
         {
           $group: {
             _id: {
-              $dateToString: { format: '%Y-%m-%d', date: '$transactionDate' },
+              $dateToString: {
+                format: '%Y-%m-%d',
+                date: '$transactionDate',
+                timezone: 'Asia/Kolkata',
+              },
             },
             count: { $sum: 1 },
             amount: { $sum: '$amount' },
@@ -359,64 +403,75 @@ export async function getPerformance(req, res) {
       appFilter.appId = { $in: accessibleApps };
     }
 
-    // Compute date range and bucket type
-    const now = new Date();
-    let start, end, bucket = 'day';
-
-    const startOfMonth = (d) => new Date(d.getFullYear(), d.getMonth(), 1);
-    const endOfMonth = (d) => new Date(d.getFullYear(), d.getMonth() + 1, 0, 23, 59, 59, 999);
+    // Compute date range and bucket type using IST
+    const nowUTC = new Date();
+    const nowIST = toIST(nowUTC);
+    let bucket = 'day';
+    let startIST;
+    let endIST;
 
     switch (filter) {
       case 'last_7_days': {
-        start = new Date(now); start.setDate(now.getDate() - 6); start.setHours(0,0,0,0);
-        end = new Date(now); end.setHours(23,59,59,999);
-        bucket = 'day';
+        endIST = endOfDayIST(nowIST);
+        startIST = new Date(endIST);
+        startIST.setDate(startIST.getDate() - 6);
+        startIST = startOfDayIST(startIST);
         break;
       }
       case 'last_15_days': {
-        start = new Date(now); start.setDate(now.getDate() - 14); start.setHours(0,0,0,0);
-        end = new Date(now); end.setHours(23,59,59,999);
-        bucket = 'day';
+        endIST = endOfDayIST(nowIST);
+        startIST = new Date(endIST);
+        startIST.setDate(startIST.getDate() - 14);
+        startIST = startOfDayIST(startIST);
         break;
       }
       case 'last_30_days': {
-        start = new Date(now); start.setDate(now.getDate() - 29); start.setHours(0,0,0,0);
-        end = new Date(now); end.setHours(23,59,59,999);
-        bucket = 'day';
+        endIST = endOfDayIST(nowIST);
+        startIST = new Date(endIST);
+        startIST.setDate(startIST.getDate() - 29);
+        startIST = startOfDayIST(startIST);
         break;
       }
       case 'this_month': {
-        start = startOfMonth(now); start.setHours(0,0,0,0);
-        end = endOfMonth(now);
-        bucket = 'day';
+        startIST = startOfDayIST(new Date(nowIST));
+        startIST.setDate(1);
+        endIST = endOfDayIST(nowIST);
         break;
       }
       case 'last_month': {
-        const firstThis = startOfMonth(now);
-        end = new Date(firstThis.getTime() - 1);
-        start = startOfMonth(end);
-        start.setHours(0,0,0,0);
-        end.setHours(23,59,59,999);
-        bucket = 'day';
+        startIST = startOfDayIST(new Date(nowIST));
+        startIST.setDate(1);
+        startIST.setMonth(startIST.getMonth() - 1);
+        endIST = new Date(startIST);
+        endIST.setMonth(endIST.getMonth() + 1);
+        endIST.setDate(0);
+        endIST = endOfDayIST(endIST);
         break;
       }
       case 'last_6_months': {
-        const sixAgo = new Date(now.getFullYear(), now.getMonth() - 5, 1);
-        start = sixAgo; start.setHours(0,0,0,0);
-        end = endOfMonth(now);
         bucket = 'month';
+        endIST = endOfDayIST(nowIST);
+        startIST = startOfDayIST(new Date(nowIST));
+        startIST.setMonth(startIST.getMonth() - 5);
+        startIST.setDate(1);
         break;
       }
       case 'this_year': {
-        start = new Date(now.getFullYear(), 0, 1);
-        start.setHours(0,0,0,0);
-        end = new Date(now.getFullYear(), 11, 31, 23, 59, 59, 999);
         bucket = 'month';
+        startIST = startOfDayIST(new Date(nowIST));
+        startIST.setMonth(0);
+        startIST.setDate(1);
+        endIST = endOfDayIST(new Date(nowIST));
+        endIST.setMonth(11);
+        endIST.setDate(31);
         break;
       }
       default:
         return res.status(400).json({ error: 'Unsupported filter' });
     }
+
+    const start = fromIST(startIST);
+    const end = fromIST(endIST);
 
     // Validate status without changing existing default behavior
     const allowed = ['success', 'failed', 'retry'];
@@ -429,7 +484,13 @@ export async function getPerformance(req, res) {
     const agg = await Payment.aggregate([
       matchStage,
       { $group: {
-          _id: { $dateToString: { format: dateFormat, date: '$transactionDate' } },
+          _id: {
+            $dateToString: {
+              format: dateFormat,
+              date: '$transactionDate',
+              timezone: 'Asia/Kolkata',
+            },
+          },
           successCount: { $sum: 1 },
           successAmount: { $sum: { $convert: { input: '$ant', to: 'int', onError: 0, onNull: 0 } } }
         }
@@ -443,7 +504,12 @@ export async function getPerformance(req, res) {
       successAmount: a.successAmount
     }));
 
-    return res.json({ bucketType: bucket, start: start.toISOString(), end: end.toISOString(), buckets });
+    return res.json({
+      bucketType: bucket,
+      start: formatIST(start),
+      end: formatIST(end),
+      buckets,
+    });
   } catch (err) {
     return res.status(500).json({ error: 'Database error', details: err.message });
   }
@@ -474,36 +540,41 @@ export async function getPerformanceHourly(req, res) {
       appFilter.appId = { $in: accessibleApps };
     }
 
-    const now = new Date();
-    let start, end;
-    let granularity = 'hour'; // or 'minute'
+    const nowUTC = new Date();
+    const nowIST = toIST(nowUTC);
+    let granularity = 'hour';
+    let endIST = new Date(nowIST);
+    let startIST;
+
     switch (filter) {
       case 'last_8_hours': {
-        start = new Date(now.getTime() - 8 * 60 * 60 * 1000);
+        startIST = new Date(endIST.getTime() - 8 * 60 * 60 * 1000);
         break;
       }
       case 'last_12_hours': {
-        start = new Date(now.getTime() - 12 * 60 * 60 * 1000);
+        startIST = new Date(endIST.getTime() - 12 * 60 * 60 * 1000);
         break;
       }
       case 'last_24_hours': {
-        start = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+        startIST = new Date(endIST.getTime() - 24 * 60 * 60 * 1000);
         break;
       }
       case 'last_10_min': {
-        start = new Date(now.getTime() - 10 * 60 * 1000);
+        startIST = new Date(endIST.getTime() - 10 * 60 * 1000);
         granularity = 'minute';
         break;
       }
       case 'last_30_min': {
-        start = new Date(now.getTime() - 30 * 60 * 1000);
+        startIST = new Date(endIST.getTime() - 30 * 60 * 1000);
         granularity = 'minute';
         break;
       }
       default:
         return res.status(400).json({ error: 'Unsupported filter' });
     }
-    end = now;
+
+    const start = fromIST(startIST);
+    const end = fromIST(endIST);
 
     const allowed = ['success', 'failed', 'retry'];
     const ptStatus = allowed.includes(String(status)) ? String(status) : 'success';
@@ -515,7 +586,13 @@ export async function getPerformanceHourly(req, res) {
       const agg = await Payment.aggregate([
         matchStage,
         { $group: {
-            _id: { $dateToString: { format: '%Y-%m-%d %H:%M', date: '$transactionDate' } },
+            _id: {
+              $dateToString: {
+                format: '%Y-%m-%d %H:%M',
+                date: '$transactionDate',
+                timezone: 'Asia/Kolkata',
+              },
+            },
             successCount: { $sum: 1 },
             successAmount: { $sum: { $convert: { input: '$ant', to: 'int', onError: 0, onNull: 0 } } }
           }
@@ -524,38 +601,38 @@ export async function getPerformanceHourly(req, res) {
       ]);
 
       const buckets = agg.map(a => ({
-        bucket: a._id, // YYYY-MM-DD HH:MM
+        bucket: a._id,
         successCount: a.successCount,
         successAmount: a.successAmount
       }));
 
-      return res.json({ bucketType: 'minute', start: start.toISOString(), end: end.toISOString(), buckets });
+      return res.json({ bucketType: 'minute', start: formatIST(start), end: formatIST(end), buckets });
     }
 
     const agg = await Payment.aggregate([
       matchStage,
       { $group: {
           _id: {
-            y: { $year: '$transactionDate' },
-            m: { $month: '$transactionDate' },
-            d: { $dayOfMonth: '$transactionDate' },
-            h: { $hour: '$transactionDate' }
+            $dateToString: {
+              format: '%Y-%m-%d %H:00',
+              date: '$transactionDate',
+              timezone: 'Asia/Kolkata',
+            },
           },
           successCount: { $sum: 1 },
           successAmount: { $sum: { $convert: { input: '$ant', to: 'int', onError: 0, onNull: 0 } } }
         }
       },
-      { $sort: { '_id.y': 1, '_id.m': 1, '_id.d': 1, '_id.h': 1 } }
+      { $sort: { _id: 1 } }
     ]);
 
-    const fmt = (g) => `${g.y.toString().padStart(4,'0')}-${g.m.toString().padStart(2,'0')}-${g.d.toString().padStart(2,'0')} ${g.h.toString().padStart(2,'0')}:00`;
     const buckets = agg.map(a => ({
-      bucket: fmt(a._id),
+      bucket: a._id,
       successCount: a.successCount,
       successAmount: a.successAmount
     }));
 
-    return res.json({ bucketType: 'hour', start: start.toISOString(), end: end.toISOString(), buckets });
+    return res.json({ bucketType: 'hour', start: formatIST(start), end: formatIST(end), buckets });
   } catch (err) {
     return res.status(500).json({ error: 'Database error', details: err.message });
   }

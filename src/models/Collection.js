@@ -15,8 +15,7 @@ const CollectionSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-// Ensure unique UPI per app
-CollectionSchema.index({ appId: 1, collectionId: 1 }, { unique: true });
+// Ensure uniqueness per appId + collectionId + tag
+CollectionSchema.index({ appId: 1, collectionId: 1, tag: 1 }, { unique: true });
 
 export const Collection = mongoose.model('Collection', CollectionSchema);
-

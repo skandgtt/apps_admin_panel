@@ -12,85 +12,105 @@ async function getAccessibleAppIds(user) {
   return accessRecords.map((a) => a.appId?.appId).filter(Boolean);
 }
 
-// Helper function to get date range based on filter
+const IST_OFFSET_MINUTES = 330;
+
+function toIST(date) {
+  return new Date(date.getTime() + IST_OFFSET_MINUTES * 60 * 1000);
+}
+
+function fromIST(date) {
+  return new Date(date.getTime() - IST_OFFSET_MINUTES * 60 * 1000);
+}
+
+function startOfDayIST(date) {
+  const d = new Date(date);
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+function endOfDayIST(date) {
+  const d = new Date(date);
+  d.setHours(23, 59, 59, 999);
+  return d;
+}
+
+// Helper function to get date range based on filter (computed in IST, returned in UTC)
 function getDateRange(filter) {
-  const now = new Date();
-  let startDate, endDate;
+  const nowUTC = new Date();
+  const nowIST = toIST(nowUTC);
+  let startIST, endIST;
 
   switch (filter) {
     case 'today': {
-      startDate = new Date(now);
-      startDate.setHours(0, 0, 0, 0);
-      endDate = new Date(now);
-      endDate.setHours(23, 59, 59, 999);
+      startIST = startOfDayIST(nowIST);
+      endIST = endOfDayIST(nowIST);
       break;
     }
     case 'yesterday': {
-      const yesterday = new Date(now);
-      yesterday.setDate(yesterday.getDate() - 1);
-      startDate = new Date(yesterday.setHours(0, 0, 0, 0));
-      endDate = new Date(yesterday.setHours(23, 59, 59, 999));
+      const yesterdayIST = new Date(nowIST);
+      yesterdayIST.setDate(yesterdayIST.getDate() - 1);
+      startIST = startOfDayIST(yesterdayIST);
+      endIST = endOfDayIST(yesterdayIST);
       break;
     }
     case 'last_10_min': {
-      startDate = new Date(now.getTime() - 10 * 60 * 1000);
-      endDate = new Date(now);
+      endIST = new Date(nowIST);
+      startIST = new Date(endIST.getTime() - 10 * 60 * 1000);
       break;
     }
     case 'last_30_min': {
-      startDate = new Date(now.getTime() - 30 * 60 * 1000);
-      endDate = new Date(now);
+      endIST = new Date(nowIST);
+      startIST = new Date(endIST.getTime() - 30 * 60 * 1000);
       break;
     }
     case 'last_1_hour': {
-      startDate = new Date(now.getTime() - 60 * 60 * 1000);
-      endDate = new Date(now);
+      endIST = new Date(nowIST);
+      startIST = new Date(endIST.getTime() - 60 * 60 * 1000);
       break;
     }
     case 'last_3_hour': {
-      startDate = new Date(now.getTime() - 3 * 60 * 60 * 1000);
-      endDate = new Date(now);
+      endIST = new Date(nowIST);
+      startIST = new Date(endIST.getTime() - 3 * 60 * 60 * 1000);
       break;
     }
     case 'last_6_hour': {
-      startDate = new Date(now.getTime() - 6 * 60 * 60 * 1000);
-      endDate = new Date(now);
+      endIST = new Date(nowIST);
+      startIST = new Date(endIST.getTime() - 6 * 60 * 60 * 1000);
       break;
     }
     case 'last_12_hours': {
-      startDate = new Date(now.getTime() - 12 * 60 * 60 * 1000);
-      endDate = new Date(now);
+      endIST = new Date(nowIST);
+      startIST = new Date(endIST.getTime() - 12 * 60 * 60 * 1000);
       break;
     }
     case 'this_weekend': {
-      const day = now.getDay(); // 0 = Sunday, 6 = Saturday
-      const diff = now.getDate() - day; // Days to subtract to get to Sunday
-      startDate = new Date(now);
-      startDate.setDate(diff); // Set to Sunday
-      startDate.setHours(0, 0, 0, 0);
-      endDate = new Date(now);
+      const refIST = new Date(nowIST);
+      const day = refIST.getDay(); // 0 = Sunday, 6 = Saturday
+      const sundayIST = startOfDayIST(refIST);
+      sundayIST.setDate(sundayIST.getDate() - day);
+      startIST = sundayIST;
+      const weekendEndIST = new Date(sundayIST);
       if (day === 0 || day === 6) {
-        // If it's already weekend, include today
-        endDate.setHours(23, 59, 59, 999);
+        const todayEndIST = endOfDayIST(refIST);
+        endIST = todayEndIST;
       } else {
-        // Otherwise, go to last Saturday
-        endDate.setDate(diff + 6);
-        endDate.setHours(23, 59, 59, 999);
+        weekendEndIST.setDate(weekendEndIST.getDate() + 6);
+        endIST = endOfDayIST(weekendEndIST);
       }
       break;
     }
     case 'this_month': {
-      startDate = new Date(now.getFullYear(), now.getMonth(), 1);
-      startDate.setHours(0, 0, 0, 0);
-      endDate = new Date(now);
-      endDate.setHours(23, 59, 59, 999);
+      const startMonthIST = startOfDayIST(new Date(nowIST));
+      startMonthIST.setDate(1);
+      startIST = startMonthIST;
+      endIST = endOfDayIST(nowIST);
       break;
     }
     default:
       return null; // No date filter for unknown values
   }
 
-  return { startDate, endDate };
+  return { startDate: fromIST(startIST), endDate: fromIST(endIST) };
 }
 
 export async function createOrUpdatePayment(req, res) {

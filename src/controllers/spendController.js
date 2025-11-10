@@ -1,6 +1,17 @@
 import { Spend } from '../models/Spend.js';
 import { UserAppAccess } from '../models/UserAppAccess.js';
 
+const istDateFormatter = new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'Asia/Kolkata',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+});
+
+function formatISTDate(date) {
+  return istDateFormatter.format(date);
+}
+
 // Helper to get accessible appIds for child_admin
 async function getAccessibleAppIds(user) {
   if (user.role === 'admin') {
@@ -157,7 +168,13 @@ export async function getSpends(req, res) {
     const paymentsAgg = await Payment.aggregate([
       { $match: paymentMatch },
       { $group: {
-          _id: { $dateToString: { format: '%Y-%m-%d', date: '$transactionDate' } },
+          _id: {
+            $dateToString: {
+              format: '%Y-%m-%d',
+              date: '$transactionDate',
+              timezone: 'Asia/Kolkata',
+            },
+          },
           receivedAmount: { $sum: { $convert: { input: '$ant', to: 'int', onError: 0, onNull: 0 } } }
         }
       }
@@ -169,8 +186,7 @@ export async function getSpends(req, res) {
     const responseMap = new Map();
 
     spends.forEach(s => {
-      const key = new Date(s.date); key.setHours(0,0,0,0);
-      const k = key.toISOString().slice(0,10);
+      const k = formatISTDate(new Date(s.date));
       responseMap.set(k, {
         date: k,
         appId: s.appId,
