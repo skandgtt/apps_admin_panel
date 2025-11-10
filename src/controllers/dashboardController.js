@@ -35,7 +35,7 @@ function endOfDayIST(date) {
   return d;
 }
 
-function formatIST(date) {
+function getISTDateComponents(date) {
   const formatter = new Intl.DateTimeFormat('en-IN', {
     timeZone: 'Asia/Kolkata',
     year: 'numeric',
@@ -46,10 +46,26 @@ function formatIST(date) {
     second: '2-digit',
     hour12: false,
   });
-
   const parts = formatter.formatToParts(date);
-  const lookup = Object.fromEntries(parts.map(({ type, value }) => [type, value]));
+  return Object.fromEntries(parts.map(({ type, value }) => [type, value]));
+}
+
+function formatIST(date) {
+  const lookup = getISTDateComponents(date);
   return `${lookup.year}-${lookup.month}-${lookup.day}T${lookup.hour}:${lookup.minute}:${lookup.second}+05:30`;
+}
+
+function getCurrentISTDate() {
+  const now = new Date();
+  const parts = getISTDateComponents(now);
+  return new Date(
+    parseInt(parts.year),
+    parseInt(parts.month) - 1,
+    parseInt(parts.day),
+    parseInt(parts.hour),
+    parseInt(parts.minute),
+    parseInt(parts.second)
+  );
 }
 
 // Helper function to get date range based on filter
@@ -405,73 +421,73 @@ export async function getPerformance(req, res) {
 
     // Compute date range and bucket type using IST
     const nowUTC = new Date();
-    const nowIST = toIST(nowUTC);
+    const nowISTParts = getISTDateComponents(nowUTC);
     let bucket = 'day';
-    let startIST;
-    let endIST;
+    
+    // Create UTC dates that represent IST dates (IST is UTC+5:30)
+    function createUTCFromIST(year, month, day, hour = 0, minute = 0, second = 0) {
+      const istDate = new Date(Date.UTC(year, month - 1, day, hour, minute, second));
+      // Subtract 5.5 hours to get the UTC equivalent
+      return new Date(istDate.getTime() - IST_OFFSET_MINUTES * 60 * 1000);
+    }
+    
+    const todayYear = parseInt(nowISTParts.year);
+    const todayMonth = parseInt(nowISTParts.month);
+    const todayDay = parseInt(nowISTParts.day);
+    
+    let start;
+    let end;
 
     switch (filter) {
       case 'last_7_days': {
-        endIST = endOfDayIST(nowIST);
-        startIST = new Date(endIST);
-        startIST.setDate(startIST.getDate() - 6);
-        startIST = startOfDayIST(startIST);
+        end = createUTCFromIST(todayYear, todayMonth, todayDay, 23, 59, 59);
+        const startISTDay = todayDay - 7; // 7 days back from today (inclusive of today = 8 days total)
+        const startDate = new Date(todayYear, todayMonth - 1, startISTDay);
+        start = createUTCFromIST(startDate.getFullYear(), startDate.getMonth() + 1, startDate.getDate(), 0, 0, 0);
         break;
       }
       case 'last_15_days': {
-        endIST = endOfDayIST(nowIST);
-        startIST = new Date(endIST);
-        startIST.setDate(startIST.getDate() - 14);
-        startIST = startOfDayIST(startIST);
+        end = createUTCFromIST(todayYear, todayMonth, todayDay, 23, 59, 59);
+        const startISTDay = todayDay - 14;
+        const startDate = new Date(todayYear, todayMonth - 1, startISTDay);
+        start = createUTCFromIST(startDate.getFullYear(), startDate.getMonth() + 1, startDate.getDate(), 0, 0, 0);
         break;
       }
       case 'last_30_days': {
-        endIST = endOfDayIST(nowIST);
-        startIST = new Date(endIST);
-        startIST.setDate(startIST.getDate() - 29);
-        startIST = startOfDayIST(startIST);
+        end = createUTCFromIST(todayYear, todayMonth, todayDay, 23, 59, 59);
+        const startISTDay = todayDay - 29;
+        const startDate = new Date(todayYear, todayMonth - 1, startISTDay);
+        start = createUTCFromIST(startDate.getFullYear(), startDate.getMonth() + 1, startDate.getDate(), 0, 0, 0);
         break;
       }
       case 'this_month': {
-        startIST = startOfDayIST(new Date(nowIST));
-        startIST.setDate(1);
-        endIST = endOfDayIST(nowIST);
+        start = createUTCFromIST(todayYear, todayMonth, 1, 0, 0, 0);
+        end = createUTCFromIST(todayYear, todayMonth, todayDay, 23, 59, 59);
         break;
       }
       case 'last_month': {
-        startIST = startOfDayIST(new Date(nowIST));
-        startIST.setDate(1);
-        startIST.setMonth(startIST.getMonth() - 1);
-        endIST = new Date(startIST);
-        endIST.setMonth(endIST.getMonth() + 1);
-        endIST.setDate(0);
-        endIST = endOfDayIST(endIST);
+        const lastMonthDate = new Date(todayYear, todayMonth - 2, 1);
+        const lastMonthLastDay = new Date(todayYear, todayMonth - 1, 0).getDate();
+        start = createUTCFromIST(lastMonthDate.getFullYear(), lastMonthDate.getMonth() + 1, 1, 0, 0, 0);
+        end = createUTCFromIST(lastMonthDate.getFullYear(), lastMonthDate.getMonth() + 1, lastMonthLastDay, 23, 59, 59);
         break;
       }
       case 'last_6_months': {
         bucket = 'month';
-        endIST = endOfDayIST(nowIST);
-        startIST = startOfDayIST(new Date(nowIST));
-        startIST.setMonth(startIST.getMonth() - 5);
-        startIST.setDate(1);
+        end = createUTCFromIST(todayYear, todayMonth, todayDay, 23, 59, 59);
+        const startDate = new Date(todayYear, todayMonth - 6, 1);
+        start = createUTCFromIST(startDate.getFullYear(), startDate.getMonth() + 1, 1, 0, 0, 0);
         break;
       }
       case 'this_year': {
         bucket = 'month';
-        startIST = startOfDayIST(new Date(nowIST));
-        startIST.setMonth(0);
-        startIST.setDate(1);
-        endIST = endOfDayIST(new Date(nowIST));
-        endIST.setMonth(11);
-        endIST.setDate(31);
+        start = createUTCFromIST(todayYear, 1, 1, 0, 0, 0);
+        end = createUTCFromIST(todayYear, 12, 31, 23, 59, 59);
         break;
       }
       default:
         return res.status(400).json({ error: 'Unsupported filter' });
     }
-
-    const start = fromIST(startIST);
-    const end = fromIST(endIST);
 
     // Validate status without changing existing default behavior
     const allowed = ['success', 'failed', 'retry'];

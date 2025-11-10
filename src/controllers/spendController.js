@@ -1,6 +1,28 @@
 import { Spend } from '../models/Spend.js';
 import { UserAppAccess } from '../models/UserAppAccess.js';
 
+const IST_OFFSET_MINUTES = 330;
+
+function toIST(date) {
+  return new Date(date.getTime() + IST_OFFSET_MINUTES * 60 * 1000);
+}
+
+function fromIST(date) {
+  return new Date(date.getTime() - IST_OFFSET_MINUTES * 60 * 1000);
+}
+
+function startOfDayIST(date) {
+  const d = new Date(date);
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+function endOfDayIST(date) {
+  const d = new Date(date);
+  d.setHours(23, 59, 59, 999);
+  return d;
+}
+
 const istDateFormatter = new Intl.DateTimeFormat('en-CA', {
   timeZone: 'Asia/Kolkata',
   year: 'numeric',
@@ -90,46 +112,53 @@ export async function getSpends(req, res) {
         $lte: new Date(endDate),
       };
     } else if (filter === 'this_week') {
-      const now = new Date();
-      const day = now.getDay(); // 0 Sun..6 Sat
+      const nowUTC = new Date();
+      const nowIST = toIST(nowUTC);
+      const day = nowIST.getDay(); // 0 Sun..6 Sat
       const diffToMonday = (day + 6) % 7; // Monday as start
-      const start = new Date(now);
-      start.setDate(now.getDate() - diffToMonday);
-      start.setHours(0, 0, 0, 0);
-      const end = new Date(start);
-      end.setDate(start.getDate() + 6);
-      end.setHours(23, 59, 59, 999);
+      const startIST = new Date(nowIST);
+      startIST.setDate(nowIST.getDate() - diffToMonday);
+      const start = fromIST(startOfDayIST(startIST));
+      const endIST = new Date(startIST);
+      endIST.setDate(startIST.getDate() + 6);
+      const end = fromIST(endOfDayIST(endIST));
       dateFilter.date = { $gte: start, $lte: end };
     } else if (filter === 'this_month') {
-      const now = new Date();
-      const start = new Date(now.getFullYear(), now.getMonth(), 1);
-      start.setHours(0, 0, 0, 0);
-      const end = new Date(now.getFullYear(), now.getMonth() + 1, 0);
-      end.setHours(23, 59, 59, 999);
+      const nowUTC = new Date();
+      const nowIST = toIST(nowUTC);
+      const startIST = startOfDayIST(new Date(nowIST));
+      startIST.setDate(1);
+      const start = fromIST(startIST);
+      const end = fromIST(endOfDayIST(nowIST));
       dateFilter.date = { $gte: start, $lte: end };
     } else if (filter === 'last_10_days') {
-      const now = new Date();
-      const start = new Date(now);
-      start.setDate(now.getDate() - 9); // include today + previous 9 days
-      start.setHours(0, 0, 0, 0);
-      const end = new Date(now);
-      end.setHours(23, 59, 59, 999);
+      const nowUTC = new Date();
+      const nowIST = toIST(nowUTC);
+      const endIST = endOfDayIST(nowIST);
+      const startIST = new Date(endIST);
+      startIST.setDate(endIST.getDate() - 9); // include today + previous 9 days
+      const start = fromIST(startOfDayIST(startIST));
+      const end = fromIST(endIST);
       dateFilter.date = { $gte: start, $lte: end };
     } else if (filter === 'last_30_days') {
-      const now = new Date();
-      const start = new Date(now);
-      start.setDate(now.getDate() - 29); // include today + previous 29 days
-      start.setHours(0, 0, 0, 0);
-      const end = new Date(now);
-      end.setHours(23, 59, 59, 999);
+      const nowUTC = new Date();
+      const nowIST = toIST(nowUTC);
+      const endIST = endOfDayIST(nowIST);
+      const startIST = new Date(endIST);
+      startIST.setDate(endIST.getDate() - 29); // include today + previous 29 days
+      const start = fromIST(startOfDayIST(startIST));
+      const end = fromIST(endIST);
       dateFilter.date = { $gte: start, $lte: end };
     } else if (filter === 'last_month') {
-      const now = new Date();
-      const firstOfThisMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-      const end = new Date(firstOfThisMonth.getTime() - 1);
-      const start = new Date(end.getFullYear(), end.getMonth(), 1);
-      start.setHours(0, 0, 0, 0);
-      end.setHours(23, 59, 59, 999);
+      const nowUTC = new Date();
+      const nowIST = toIST(nowUTC);
+      const firstOfThisMonthIST = startOfDayIST(new Date(nowIST));
+      firstOfThisMonthIST.setDate(1);
+      const endIST = new Date(firstOfThisMonthIST.getTime() - 1);
+      const startIST = startOfDayIST(new Date(endIST));
+      startIST.setDate(1);
+      const start = fromIST(startIST);
+      const end = fromIST(endOfDayIST(endIST));
       dateFilter.date = { $gte: start, $lte: end };
     }
 

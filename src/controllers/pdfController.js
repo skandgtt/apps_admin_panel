@@ -2,6 +2,28 @@ import PDFDocument from 'pdfkit';
 import { Payment } from '../models/Payment.js';
 import { UserAppAccess } from '../models/UserAppAccess.js';
 
+const IST_OFFSET_MINUTES = 330;
+
+function toIST(date) {
+  return new Date(date.getTime() + IST_OFFSET_MINUTES * 60 * 1000);
+}
+
+function fromIST(date) {
+  return new Date(date.getTime() - IST_OFFSET_MINUTES * 60 * 1000);
+}
+
+function startOfDayIST(date) {
+  const d = new Date(date);
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+function endOfDayIST(date) {
+  const d = new Date(date);
+  d.setHours(23, 59, 59, 999);
+  return d;
+}
+
 // Helper to get accessible appIds for child_admin
 async function getAccessibleAppIds(user) {
   if (user.role === 'admin') {
@@ -20,29 +42,31 @@ export async function generatePaymentsPDF(req, res) {
     // Build filters
     let dateFilter = {};
     if (filter !== 'all_time' && filter !== 'date_range') {
-      const now = new Date();
+      const nowUTC = new Date();
+      const nowIST = toIST(nowUTC);
       let start, end;
 
       switch (filter) {
         case 'yesterday': {
-          const yesterday = new Date(now);
-          yesterday.setDate(yesterday.getDate() - 1);
-          start = new Date(yesterday.setHours(0, 0, 0, 0));
-          end = new Date(yesterday.setHours(23, 59, 59, 999));
+          const yesterdayIST = new Date(nowIST);
+          yesterdayIST.setDate(yesterdayIST.getDate() - 1);
+          start = fromIST(startOfDayIST(yesterdayIST));
+          end = fromIST(endOfDayIST(yesterdayIST));
           break;
         }
         case 'last_7_days': {
-          start = new Date(now);
-          start.setDate(start.getDate() - 7);
-          start.setHours(0, 0, 0, 0);
-          end = new Date(now);
-          end.setHours(23, 59, 59, 999);
+          const endIST = endOfDayIST(nowIST);
+          const startIST = new Date(endIST);
+          startIST.setDate(endIST.getDate() - 7);
+          start = fromIST(startOfDayIST(startIST));
+          end = fromIST(endIST);
           break;
         }
         case 'this_month': {
-          start = new Date(now.getFullYear(), now.getMonth(), 1);
-          end = new Date(now);
-          end.setHours(23, 59, 59, 999);
+          const startIST = startOfDayIST(new Date(nowIST));
+          startIST.setDate(1);
+          start = fromIST(startIST);
+          end = fromIST(endOfDayIST(nowIST));
           break;
         }
       }
